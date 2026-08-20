@@ -3,186 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stick War: Online</title>
+    <title>Stick War: Online Strategy</title>
     <style>
         body { 
-            margin: 0; 
-            background-color: #1a1a2e; 
-            color: white; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            overflow: hidden; 
+            margin: 0; background-color: #111; color: white; 
+            font-family: Arial, sans-serif; display: flex; 
+            flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; 
         }
-        #ui-bar { 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center;
-            width: 800px; 
-            padding: 15px; 
-            background: #16213e; 
-            border-radius: 8px; 
-            margin-bottom: 15px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        #top-bar {
+            display: flex; justify-content: space-between; width: 900px; 
+            background: #222; padding: 10px 20px; border-radius: 8px 8px 0 0;
+            border-bottom: 2px solid #444;
         }
-        .stats {
-            font-size: 18px;
-        }
-        .btn { 
-            padding: 10px 15px; 
-            cursor: pointer; 
-            border: none; 
-            border-radius: 5px; 
-            font-weight: bold; 
-            transition: 0.2s; 
-            font-size: 14px;
-        }
-        .btn-spawn { background: #e94560; color: white; margin-left: 10px; }
-        .btn-spawn:hover { background: #d93852; }
-        .btn-ad { background: #f39c12; color: white; animation: pulse 2s infinite; }
-        .btn-ad:hover { background: #e67e22; }
+        .hud-item { font-size: 16px; font-weight: bold; }
+        .gold { color: #f1c40f; }
+        .gems { color: #3498db; }
         
-        /* O'yin maydoni dizayni */
         canvas { 
-            background-color: #87CEEB; /* Osmon rangi */
-            border: 4px solid #0f3460; 
-            border-radius: 8px; 
-            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            background: linear-gradient(to bottom, #87CEEB 60%, #557a46 60%); 
+            border: 4px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
         }
-        
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        #controls {
+            margin-top: 10px; display: flex; gap: 15px;
+        }
+        .game-btn {
+            background: #e74c3c; color: white; border: none; padding: 10px 20px;
+            font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer;
+            transition: 0.2s;
+        }
+        .game-btn:hover { background: #c0392b; transform: scale(1.05); }
+        .game-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
-    <!-- Yuqori panel (UI) -->
-    <div id="ui-bar">
-        <div class="stats">
-            <span>O'yinchi: <b id="playerName" style="color: #4cd137;">Mehmon</b></span> | 
-            <span>Olmos: <b id="gemCount" style="color: #00d2ff;">0</b> 💎</span>
-        </div>
-        <div>
-            <button class="btn btn-ad" onclick="watchAd()">🎥 Reklama ko'rish (+10 💎)</button>
-            <button class="btn btn-spawn" onclick="spawnUnit()">⚔️ Askar (100 Oltin)</button>
-        </div>
+    <div id="top-bar">
+        <div class="hud-item">Oltin: <span id="goldDisplay" class="gold">150</span> 🪙</div>
+        <div class="hud-item">Baza Joji (HP): <span id="baseHp" style="color: #2ecc71;">100%</span> ❤️</div>
+        <div class="hud-item">Olmos: <span id="gemDisplay" class="gems">0</span> 💎</div>
     </div>
 
-    <!-- O'yin chiziladigan maydon -->
-    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <canvas id="gameCanvas" width="900" height="450"></canvas>
+
+    <div id="controls">
+        <button class="game-btn" onclick="spawnUnit('miner')">⛏️ Konchi chiqar (خط 50 Oltin)</button>
+        <button class="game-btn" onclick="spawnUnit('sword')">⚔️ Qilichboz (100 Oltin)</button>
+        <button class="game-btn" onclick="watchAdForGold()">📺 Oltin olish (+100)</button>
+    </div>
 
     <script>
-        // --- 1. SOZLAMALAR VA MULTIPLAYER ---
-        
-        // Vaqtincha tasodifiy ism beramiz (Keyinchalik Google Login ulanganda baza orqali olinadi)
-        const username = "O'yinchi_" + Math.floor(Math.random() * 1000);
-        document.getElementById("playerName").innerText = username;
-        
-        // =========================================================================
-        // DIQQAT! O'ZINGNING RENDER MANZILINGNI SHU YERGA YOZ!
-        // Masalan: "stick-war-backend-xyz.onrender.com"
-        // Hech qanday "https://" yoki "wss://" yozma, faqat domenni o'zini yoz!
-        // =========================================================================
-        const RENDER_DOMAIN = "stick-war.onrender.com"; 
-        
-        // WebSocket orqali ulanish (wss:// bu xavfsiz ulanish, Vercel'da ishlaydi)
-        const ws = new WebSocket(`wss://${RENDER_DOMAIN}/ws/Lobby-1`);
-        
-        let units = []; // Ekranga chiqadigan barcha askarlar ro'yxati
-
-        ws.onopen = () => {
-            console.log("Render serveriga muvaffaqiyatli ulandik!");
-        };
-
-        ws.onerror = (error) => {
-            console.error("WebSocket xatoligi! Render server ishlayotganini tekshiring.", error);
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            
-            // Serverdan askar chiqarish buyrug'i kelsa
-            if (data.action === "spawn") {
-                // Agar askar egasi men bo'lmasam, demak u dushman (isEnemy = true)
-                const isEnemy = data.owner !== username;
-                
-                // Dushman o'ng tomondan (x=750), meniki chapdan (x=50) chiqadi
-                const startX = isEnemy ? 750 : 50; 
-                const unitColor = isEnemy ? "#e94560" : "#0f3460"; // Dushman qizil, meniki ko'k
-                
-                units.push({ 
-                    x: startX, 
-                    y: 300, 
-                    color: unitColor, 
-                    isEnemy: isEnemy 
-                });
-            }
-        };
-
-        function spawnUnit() {
-            // Askar chiqarish tugmasi bosilganda serverga xabar jo'natamiz
-            const unitData = { 
-                action: "spawn", 
-                owner: username
-            };
-            ws.send(JSON.stringify(unitData));
-        }
-
-
-        // --- 2. O'YIN DVIJOKI (Game Loop) ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
+        // O'yin iqtisodiyoti va holati
+        let gold = 150;
+        let gems = 0;
+        let baseHealth = 100;
+
+        // Askarlar va konchilar massivi
+        let units = [];
+        
+        // Oltin koni koordinatalari (Xaritaning o'rtasida)
+        const goldMine = { x: 450, y: 300, goldLeft: 5000 };
+
+        // Askar qo'shish funksiyasi
+        function spawnUnit(type) {
+            let cost = type === 'miner' ? 50 : 100;
+            if (gold >= cost) {
+                gold -= cost;
+                updateHUD();
+
+                units.push({
+                    type: type, // 'miner' yoki 'sword'
+                    x: 80,      // Bizning bazadan chiqadi (chap tomon)
+                    y: 310,
+                    hp: 100,
+                    targetX: type === 'miner' ? goldMine.x : 700, // Konchi konchiga, askar dushmanga boradi
+                    state: 'moving' // 'moving', 'mining', 'fighting'
+                });
+            } else {
+                alert("Oltin yetarli emas!");
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('goldDisplay').innerText = gold;
+            document.getElementById('gemDisplay').innerText = gems;
+        }
+
+        function watchAdForGold() {
+            alert("Reklama ko'rsatilmoqda...");
+            gold += 100;
+            updateHUD();
+        }
+
+        // Avtomatik har 2 sekundda passiv oltin qo'shilish (Konchilar ishlamasa ham)
+        setInterval(() => {
+            gold += 5;
+            updateHUD();
+        }, 2000);
+
+        // --- O'YIN DVORI (GAME LOOP) ---
         function gameLoop() {
-            // Ekranni har kadrda tozalash
+            // Ekranni tozalash
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Yerni chizish (Jigarrang tuproq)
-            ctx.fillStyle = "#8d6e63";
-            ctx.fillRect(0, 340, canvas.width, 60);
 
-            // Maysa qatlami (Yashil tepa qismi)
-            ctx.fillStyle = "#4caf50";
-            ctx.fillRect(0, 340, canvas.width, 10);
+            // 1. Zamin va osmon
+            ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, canvas.width, 270); // Osmon
+            ctx.fillStyle = "#3d5535"; ctx.fillRect(0, 270, canvas.width, 180); // Tuproq/Maysa
 
-            // Askarlarni chizish va yurgizish
-            units.forEach((unit) => {
-                // Askarning o'zini chizish (to'rtburchak)
-                ctx.fillStyle = unit.color;
-                ctx.fillRect(unit.x, unit.y, 20, 40);
-                
-                // Qilichni chizish (oddiy chiziq)
-                ctx.fillStyle = "silver";
-                if(unit.isEnemy) {
-                    ctx.fillRect(unit.x - 15, unit.y + 15, 20, 4); // Dushman qilichi chapga qaraydi
-                    unit.x -= 1.5; // Dushman chapga yuradi
-                } else {
-                    ctx.fillRect(unit.x + 15, unit.y + 15, 20, 4); // Bizning qilich o'ngga qaraydi
-                    unit.x += 1.5; // Bizning askar o'ngga yuradi
+            // 2. Bazalar (Chapda biznikilik, o'ngda dushman)
+            // Bizning baza (Haykal/Qal'a)
+            ctx.fillStyle = "#2980b9";
+            ctx.fillRect(30, 180, 50, 110);
+            ctx.fillStyle = "#fff"; ctx.font = "12px Arial"; ctx.fillText("Baza", 40, 175);
+
+            // Dushman bazasi
+            ctx.fillStyle = "#c0392b";
+            ctx.fillRect(820, 180, 50, 110);
+            ctx.fillText("Dushman", 825, 175);
+
+            // 3. Oltin koni
+            ctx.fillStyle = "#f39c12";
+            ctx.beginPath();
+            ctx.arc(goldMine.x, goldMine.y, 25, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#fff"; ctx.font = "10px Arial"; ctx.fillText("Koni", goldMine.x - 12, goldMine.y + 4);
+
+            // 4. Askarlarni boshqarish va chizish
+            units.forEach((unit, index) => {
+                // Harakat mantiqi
+                if (unit.state === 'moving') {
+                    if (unit.x < unit.targetX) unit.x += 1.5;
+                    else if (unit.x > unit.targetX) unit.x -= 1.5;
+                    else {
+                        if (unit.type === 'miner') unit.state = 'mining';
+                    }
                 }
+
+                // Konchi oltin yig'ishi
+                if (unit.type === 'miner' && unit.state === 'mining') {
+                    // Vaqti-vaqti bilan baza sari oltin tashiydi
+                    if (Math.random() < 0.02) {
+                        gold += 10;
+                        updateHUD();
+                    }
+                }
+
+                // Askarni chizish
+                ctx.fillStyle = unit.type === 'miner' ? '#f1c40f' : '#e74c3c';
+                ctx.fillRect(unit.x - 10, unit.y - 30, 16, 30); // Tanasi
+                
+                // Boshchasi
+                ctx.beginPath();
+                ctx.arc(unit.x - 2, unit.y - 35, 6, 0, Math.PI * 2);
+                ctx.fillStyle = "#f5cd79";
+                ctx.fill();
             });
 
-            // Animatsiyani to'xtovsiz davom ettirish
             requestAnimationFrame(gameLoop);
         }
-        
-        // O'yinni boshlash
+
         gameLoop();
-
-
-        // --- 3. REKLAMA VA MONETIZATSIYA ---
-        async function watchAd() {
-            // Haqiqiy loyihada Yandex/Poki/CrazyGames reklamani chiqaruvchi maxsus kodi shu yerga tushadi
-            alert("Reklama ko'rsatilmoqda... (Hozircha test rejimi)");
-            
-            // Reklama to'liq ko'rib bo'lingach, ekrandagi olmoslar soni oshadi
-            let currentGems = parseInt(document.getElementById("gemCount").innerText);
-            document.getElementById("gemCount").innerText = currentGems + 10;
-            
-            alert("Tabriklaymiz! Reklamani ko'rganingiz uchun +10 olmos berildi.");
-        }
     </script>
 </body>
 </html>
